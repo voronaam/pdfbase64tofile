@@ -1,0 +1,11 @@
+[package]
+name = "pdfbase64tofile"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+eframe = "0.33.3"
+image = "0.25.9"
+pdfium-render = "0.8.37"
+rfd = "0.17.2"
