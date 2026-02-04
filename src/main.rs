@@ -1,6 +1,8 @@
 use eframe::egui;
 use pdfium_render::prelude::*;
 use std::env;
+use std::fs;
+use std::process::Command;
 use std::sync::Arc;
 
 fn main() -> Result<(), eframe::Error> {
@@ -180,6 +182,47 @@ impl eframe::App for PdfApp {
                 ));
                 if ui.button("Next").clicked() && self.current_page_index < self.total_pages - 1 {
                     self.load_page(ctx, self.current_page_index + 1);
+                }
+
+                ui.separator();
+
+                if ui.button("Save").clicked() {
+                    // Format filename: page001.txt, page012.txt, etc.
+                    let filename = format!("page{:03}.txt", self.current_page_index + 1);
+
+                    if let Err(e) = fs::write(&filename, &self.text_content) {
+                        eprintln!("Error saving file {}: {}", filename, e);
+                    } else {
+                        println!("Saved text to {}", filename);
+                    }
+                }
+
+                if ui.button("Display").clicked() {
+                    // Determine script name based on OS
+                    #[cfg(target_os = "windows")]
+                    let script = "display_script.bat";
+                    #[cfg(not(target_os = "windows"))]
+                    let script = "./display_script.sh";
+
+                    println!("Running script: {}", script);
+
+                    // Execute the script
+                    let output = if cfg!(target_os = "windows") {
+                        Command::new("cmd").args(["/C", script]).output()
+                    } else {
+                        Command::new("sh").arg(script).output()
+                    };
+
+                    match output {
+                        Ok(o) => {
+                            if o.status.success() {
+                                println!("Script output: {}", String::from_utf8_lossy(&o.stdout));
+                            } else {
+                                eprintln!("Script failed: {}", String::from_utf8_lossy(&o.stderr));
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to execute script: {}", e),
+                    }
                 }
             });
 
