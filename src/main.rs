@@ -117,7 +117,7 @@ impl PdfApp {
                 let p_width = crop.bounds.width().value;
                 let p_height = crop.bounds.height().value;
                 let p_left_offset = crop.bounds.left().value;
-                let p_bottom_offset = crop.bounds.bottom().value;
+                let _p_bottom_offset = crop.bounds.bottom().value;
                 // In PDF, 'top' is the highest Y value.
                 // We use this to flip the Y-axis.
                 let p_top_value = crop.bounds.top().value;
@@ -210,6 +210,26 @@ impl eframe::App for PdfApp {
                             if let Some(range) = state.cursor.char_range() {
                                 let highlights = self.get_highlights(range);
 
+                                if let Some(first_rect) = highlights.first() {
+                                    let screen_min = rect.min
+                                        + egui::vec2(
+                                            first_rect.min.x * display_size.x,
+                                            first_rect.min.y * display_size.y,
+                                        );
+                                    let screen_max = rect.min
+                                        + egui::vec2(
+                                            first_rect.max.x * display_size.x,
+                                            first_rect.max.y * display_size.y,
+                                        );
+                                    let cursor_screen_rect =
+                                        egui::Rect::from_min_max(screen_min, screen_max);
+
+                                    // Tell Egui to scroll here if it's off-screen
+                                    // None = Minimal scroll (just bring it into view)
+                                    // Some(Align::Center) = Always center it
+                                    ui.scroll_to_rect(cursor_screen_rect, None);
+                                }
+
                                 for h_rect_norm in highlights {
                                     // Convert normalized coordinates (0..1) back to Screen Pixels
                                     let screen_min = rect.min
@@ -247,7 +267,8 @@ impl eframe::App for PdfApp {
                 .show(ui, |ui| {
                     let text_edit = egui::TextEdit::multiline(&mut self.text_content)
                         .id(ui.make_persistent_id("text_editor"))
-                        .desired_width(f32::INFINITY);
+                        .desired_width(f32::INFINITY)
+                        .font(egui::FontId::new(16.0, egui::FontFamily::Monospace));
 
                     ui.add(text_edit);
                 });
