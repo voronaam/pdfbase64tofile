@@ -4,7 +4,6 @@ use pdfium_render::prelude::*;
 use std::env;
 use std::fs;
 use std::process::Command;
-use image::DynamicImage;
 
 fn main() -> Result<(), eframe::Error> {
     // 1. Setup PDFium
@@ -61,6 +60,10 @@ struct PdfApp {
 
     decoded_textures: Vec<egui::TextureHandle>, // Stores the recovered JPEGs
     decode_logs: Vec<String>,                   // Stores status reports
+
+    show_hex_dialog: bool,
+    hex_input: String,
+    jump_status_msg: String,
 }
 
 impl PdfApp {
@@ -75,6 +78,9 @@ impl PdfApp {
             _pdfium: pdfium,
             decoded_textures: Vec::new(),
             decode_logs: Vec::new(),
+            show_hex_dialog: false,
+            hex_input: String::new(),
+            jump_status_msg: String::new(),
         };
 
         if let Ok(doc) = pdfium.load_pdf_from_file(&path, None) {
@@ -367,6 +373,90 @@ impl PdfApp {
         
         }
     }
+
+
+    fn perform_hex_jump(&mut self, ctx: &egui::Context) {
+        // 1. Parse Hex Input
+        let clean_input = self.hex_input.trim().trim_start_matches("0x");
+        let binary_offset = match u64::from_str_radix(clean_input, 16) {
+            Ok(val) => val,
+            Err(_) => {
+                self.jump_status_msg = "Invalid Hexadecimal".to_string();
+                return;
+            }
+        };
+
+        // 2. Calculate Target Base64 Index
+        // Rule: 3 bytes of binary = 4 bytes of Base64.
+        // Formula: (Offset / 3) * 4
+        let target_b64_index = (binary_offset / 3) * 4;
+        
+        self.jump_status_msg = format!("Seeking Hex 0x{:X} -> Base64 Index {}", binary_offset, target_b64_index);
+
+        // 3. Iterate Files
+        let mut current_b64_count: u64 = 0;
+        
+        // Scan directory (reuse sorting logic)
+        let mut files = Vec::new();
+        if let Ok(entries) = fs::read_dir(".") {
+            files = entries.flatten()
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.starts_with("page") && name.ends_with(".txt")
+                })
+                .collect();
+            
+            files.sort_by_key(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let num_str: String = name.chars().filter(|c| c.is_ascii_digit()).collect();
+                num_str.parse::<u32>().unwrap_or(9999)
+            });
+        }
+
+        let mut found_page_index = None;
+        let mut found_cursor_pos = 0;
+
+        'file_loop: for (page_idx, file) in files.iter().enumerate() {
+            if let Ok(content) = fs::read_to_string(file.path()) {
+                // Iterate characters in this file
+                for (char_idx, c) in content.chars().enumerate() {
+                    // Check if it's a valid Base64 char (A-Z, a-z, 0-9, +, /)
+                    // We treat everything else (newlines, spaces) as invisible to the offset count
+                    if c.is_alphanumeric() || c == '+' || c == '/' {
+                        // Check match BEFORE incrementing (0-indexed) or AFTER?
+                        // Usually offset 0 is the first char.
+                        if current_b64_count == target_b64_index {
+                            // FOUND IT!
+                            found_page_index = Some(page_idx);
+                            found_cursor_pos = char_idx;
+                            break 'file_loop;
+                        }
+                        current_b64_count += 1;
+                    }
+                }
+            }
+        }
+
+        // 4. Act on Result
+        if let Some(idx) = found_page_index {
+            // Load the page
+            self.load_page(ctx, idx as u16);
+            self.jump_status_msg = format!("Found on Page {}, Char {}", idx + 1, found_cursor_pos);
+            self.show_hex_dialog = false; // Close dialog
+
+            // Set Cursor and Focus
+            let text_id = egui::Id::new("shared_pdf_editor_id");
+            if let Some(mut state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                    egui::text::CCursor::new(found_cursor_pos)
+                )));
+                state.store(ctx, text_id);
+                ctx.memory_mut(|m| m.request_focus(text_id));
+            }
+        } else {
+            self.jump_status_msg = format!("Offset out of bounds. Max Base64 len: {}", current_b64_count);
+        }
+    }
 }
 
 impl eframe::App for PdfApp {
@@ -389,6 +479,12 @@ impl eframe::App for PdfApp {
 
                 if ui.button("Jump to I/l/1").clicked() {
                     self.jump_to_ilone(ctx);
+                }
+
+                if ui.button("Hex Jump").clicked() {
+                    self.show_hex_dialog = true;
+                    self.hex_input.clear();
+                    self.jump_status_msg.clear();
                 }
 
                 ui.separator();
@@ -612,7 +708,43 @@ impl eframe::App for PdfApp {
                             }
                         }
                     });
-
         });
+
+        // --- FLOATING WINDOW FOR HEX JUMP ---
+        if self.show_hex_dialog {
+            egui::Window::new("Jump to Hex Offset")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.label("Enter Hex Offset (e.g., 0x2E1B):");
+                    
+                    // Input field
+                    let response = ui.text_edit_singleline(&mut self.hex_input);
+                    
+                    // Auto-focus input when window opens
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        self.perform_hex_jump(ctx);
+                    }
+                    
+                    // Request focus on first open
+                    if self.hex_input.is_empty() && !response.has_focus() {
+                        response.request_focus();
+                    }
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Go").clicked() {
+                            self.perform_hex_jump(ctx);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_hex_dialog = false;
+                        }
+                    });
+
+                    if !self.jump_status_msg.is_empty() {
+                        ui.colored_label(egui::Color32::RED, &self.jump_status_msg);
+                    }
+                });
+        }
     }
 }
