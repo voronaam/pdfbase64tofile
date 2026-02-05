@@ -130,6 +130,13 @@ impl PdfApp {
                     self.text_content = content;
                 }
 
+                // Replace any 0x0D character with spaces
+                self.text_content = self
+                    .text_content
+                    .chars()
+                    .map(|c| if c == '\u{0D}' { ' ' } else { c })
+                    .collect();
+
                 self.current_page_index = index;
             }
         }
@@ -159,7 +166,7 @@ impl PdfApp {
                     let end_byte = selection.primary.index.max(selection.secondary.index);
 
                     // Conversion: Byte Index -> Char Index
-                    if start_byte < self.text_content.len() {
+                    if start_byte < self.text_content.len() + 1 {
                         let start_char_idx = self.text_content[..start_byte].chars().count();
 
                         let char_count = if start_byte == end_byte {
@@ -242,22 +249,12 @@ impl eframe::App for PdfApp {
                     println!("Running script: {}", script);
 
                     // Execute the script
-                    let output = if cfg!(target_os = "windows") {
-                        Command::new("cmd").args(["/C", script]).output()
+                    let child = if cfg!(target_os = "windows") {
+                        Command::new("cmd").args(["/C", script]).spawn()
                     } else {
-                        Command::new("sh").arg(script).output()
+                        Command::new("sh").arg(script).spawn()
                     };
-
-                    match output {
-                        Ok(o) => {
-                            if o.status.success() {
-                                println!("Script output: {}", String::from_utf8_lossy(&o.stdout));
-                            } else {
-                                eprintln!("Script failed: {}", String::from_utf8_lossy(&o.stderr));
-                            }
-                        }
-                        Err(e) => eprintln!("Failed to execute script: {}", e),
-                    }
+                    child.expect("Failed to launch display script");
                 }
             });
 
@@ -361,7 +358,7 @@ impl eframe::App for PdfApp {
                         let font_size = 24.0;
                         // We define the font here so we can use metrics for both the indicator and the editor
                         let font_id = egui::FontId::new(font_size, egui::FontFamily::Monospace);
-                        let row_height = ui.fonts_mut(|f| f.row_height(&font_id)) * 1.02;
+                        let row_height = ui.fonts_mut(|f| f.row_height(&font_id)) * 1.015;
 
                         // 1. LEFT PANEL: STATUS INDICATORS
                         // We allocate a vertical strip. Width = 15px.
