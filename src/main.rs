@@ -41,6 +41,8 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+const BASE64_ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/= ";
+
 struct PdfApp {
     // PDF State
     document: Option<PdfDocument<'static>>,
@@ -259,7 +261,7 @@ impl eframe::App for PdfApp {
                 }
             });
 
-            let available_height = ui.available_height();
+            // let available_height = ui.available_height();
 
             // --- TOP SECTION: PDF VIEW ---
             egui::ScrollArea::vertical()
@@ -378,8 +380,12 @@ impl eframe::App for PdfApp {
                         for (i, line) in self.text_content.lines().enumerate() {
                             let char_count = line.trim().chars().count();
 
+                            let invalid_count = line.trim().chars().filter(|&c| !BASE64_ALPHABET.contains(c)).count();
+                        
                             // Check rule: Exactly 76 characters
-                            let color = if char_count == 76 {
+                            let color = if invalid_count > 0 {
+                                egui::Color32::ORANGE
+                            } else if char_count == 76 {
                                 egui::Color32::GREEN
                             } else {
                                 egui::Color32::from_gray(50) // Dim gray for other lines
