@@ -4,6 +4,7 @@ use pdfium_render::prelude::*;
 use std::env;
 use std::fs;
 use std::process::Command;
+use image::DynamicImage;
 
 fn main() -> Result<(), eframe::Error> {
     // 1. Setup PDFium
@@ -57,6 +58,9 @@ struct PdfApp {
     text_content: String,
 
     _pdfium: &'static Pdfium,
+
+    decoded_textures: Vec<egui::TextureHandle>, // Stores the recovered JPEGs
+    decode_logs: Vec<String>,                   // Stores status reports
 }
 
 impl PdfApp {
@@ -69,6 +73,8 @@ impl PdfApp {
             page_size: egui::Vec2::ZERO,
             text_content: String::new(),
             _pdfium: pdfium,
+            decoded_textures: Vec::new(),
+            decode_logs: Vec::new(),
         };
 
         if let Ok(doc) = pdfium.load_pdf_from_file(&path, None) {
@@ -251,6 +257,116 @@ impl PdfApp {
             }
         }
     }
+
+    // CORE LOGIC: Load files -> Clean -> Base64 -> Scan for JPEGs
+    fn run_stream_decoding(&mut self, ctx: &egui::Context) {
+        use base64::{Engine as _,};
+
+        self.decoded_textures.clear();
+        self.decode_logs.clear();
+
+        // 1. Load and Sort Files
+        self.decode_logs.push("Scanning current directory for page*.txt...".to_owned());
+        let mut file_contents = Vec::new();
+        
+        if let Ok(entries) = fs::read_dir(".") {
+            let mut files: Vec<_> = entries.flatten()
+                .filter(|e| {
+                    e.file_name().to_string_lossy().starts_with("page") 
+                    && e.file_name().to_string_lossy().ends_with(".txt")
+                })
+                .collect();
+
+            // Sort by number (page001, page002)
+            files.sort_by_key(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let num_str = &name[4..name.len()-4]; // strip "page" and ".txt"
+                num_str.parse::<u32>().unwrap_or(9999)
+            });
+
+            for file in files {
+                if let Ok(content) = fs::read_to_string(file.path()) {
+                    self.decode_logs.push(format!("Loaded: {:?}", file.file_name()));
+                    file_contents.push(content);
+                }
+            }
+        }
+
+        let raw_string = file_contents.join("");
+        self.decode_logs.push(format!("Total raw length: {} characters", raw_string.len()));
+
+        // 2. Clean Base64 Stream
+        // We strip everything that isn't a Base64 data char (A-Z, a-z, 0-9, +, /).
+        // We explicitly REMOVE existing '=' padding. The permissive decoder will 
+        // handle the necessary padding logic internally.
+        let clean_string: String = raw_string.chars()
+            .filter(|c| c.is_alphanumeric() || *c == '+' || *c == '/')
+            .collect();
+
+        self.decode_logs.push(format!("Cleaned Base64 length: {} characters", clean_string.len()));
+
+        // 3. Robust Decode
+        // We configure a custom engine to be tolerant of corruption (missing padding, trailing bits).
+        let config = base64::engine::GeneralPurposeConfig::new()
+            .with_decode_allow_trailing_bits(true)
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent);
+            
+        let engine = base64::engine::GeneralPurpose::new(&base64::alphabet::STANDARD, config);
+
+        match engine.decode(&clean_string) {
+            Ok(bytes) => {
+                self.decode_logs.push(format!("Decoded into {} bytes of binary data", bytes.len()));
+                self.recover_jpegs_from_stream(ctx, &bytes);
+            },
+            Err(e) => {
+                self.decode_logs.push(format!("CRITICAL: Base64 decoding failed even with permissive mode: {}", e));
+            }
+        }
+    }
+
+    // ROBUST SCANNER: Looks for SOI (FF D8) and handles truncated streams
+    fn recover_jpegs_from_stream(&mut self, ctx: &egui::Context, bytes: &[u8]) {
+        // let mut decoder = jpeg_decoder::Decoder::new(bytes);
+        // let metadata = decoder.info().map(|e| self.decode_logs.push(format!("-> Got  image info: {}x{}", e.width, e.height)));
+        // let pixels = decoder.decode().map_err(|e| self.decode_logs.push(format!("-> FAILED to decode image: {}", e)));
+
+        // use zenjpeg::decoder::{Decoder, DecodedImage, DecodedImageF32, DecoderConfig};
+        // if let Ok(info) = Decoder::new()
+        //         .fancy_upsampling(true)
+        //         .block_smoothing(false)
+        //         .decode(bytes).map_err(|e| self.decode_logs.push(format!("-> FAILED to decode image: {}", e))) {
+        //     // self.decode_logs.push(format!("Got image {}x{}, {} components", info.dimensions.width, info.dimensions.height, info.num_components));
+        //     self.decode_logs.push(format!("Got image {}x{}", info.width, info.height));
+        // }
+
+
+        // let mut decoder = zune_jpeg::JpegDecoder::new(std::io::Cursor::new(bytes));
+        // // decode the file
+        // let pixels = decoder.decode().map_err(|e| self.decode_logs.push(format!("-> FAILED to decode image: {}", e)));
+
+
+        // Attempt to decode
+        match image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg) {
+            Ok(img) => {
+                let size = [img.width() as usize, img.height() as usize];
+                let color_image = egui::ColorImage::from_rgb(size, &img.to_rgb8());
+                
+                let tex = ctx.load_texture(
+                    "decoded_img",
+                    color_image,
+                    egui::TextureOptions::LINEAR
+                );
+                
+                self.decoded_textures.push(tex);
+                self.decode_logs.push("-> SUCCESS: Recovered image".into());
+
+            },
+            Err(e) => {
+                self.decode_logs.push(format!("-> FAILED to decode image: {}", e));
+            }
+        
+        }
+    }
 }
 
 impl eframe::App for PdfApp {
@@ -279,9 +395,11 @@ impl eframe::App for PdfApp {
 
                 if ui.button("Save").clicked() {
                     self.save_page();
+                    self.run_stream_decoding(ctx);
                 }
                 if ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl) {
                     self.save_page();
+                    self.run_stream_decoding(ctx);
                 }
                 if ctx.input(|i| i.key_pressed(egui::Key::J) && i.modifiers.ctrl) {
                     self.jump_to_ilone(ctx);
@@ -305,8 +423,6 @@ impl eframe::App for PdfApp {
                     child.expect("Failed to launch display script");
                 }
             });
-
-            // let available_height = ui.available_height();
 
             // --- TOP SECTION: PDF VIEW ---
             egui::ScrollArea::vertical()
@@ -461,6 +577,42 @@ impl eframe::App for PdfApp {
                         ui.add(text_edit);
                     });
                 });
+
+                // let available_height = ui.available_height();
+
+                // --- BOTTOM: DECODED IMAGES & LOGS ---
+                egui::ScrollArea::vertical()
+                    .id_salt("decode_scroll")
+                    .show(ui, |ui| {
+                        ui.heading("Decoded Stream Results");
+                        
+                        // 1. Show Logs
+                        egui::CollapsingHeader::new("Processing Logs")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                for log in &self.decode_logs {
+                                    ui.label(log);
+                                }
+                            });
+
+                        ui.separator();
+
+                        // 2. Show Recovered Images
+                        if self.decoded_textures.is_empty() {
+                            ui.label("No images recovered.");
+                        } else {
+                            ui.label(format!("Recovered {} segments:", self.decoded_textures.len()));
+                            for (i, texture) in self.decoded_textures.iter().enumerate() {
+                                ui.label(format!("Segment #{}", i + 1));
+                                
+                                // let size = texture.size_vec2();
+                                // let scale = (ui.available_width() / size.x).min(1.0); 
+                                ui.image(texture);
+                                ui.separator();
+                            }
+                        }
+                    });
+
         });
     }
 }

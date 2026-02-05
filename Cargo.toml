@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+base64 = "0.22.1"
 eframe = "0.33.3"
 image = "0.25.9"
 pdfium-render = "0.8.37"
