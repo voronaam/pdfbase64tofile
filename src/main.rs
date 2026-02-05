@@ -30,7 +30,7 @@ fn main() -> Result<(), eframe::Error> {
 
     // 3. Initialize App State
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([800.0, 900.0]),
+        viewport: egui::ViewportBuilder::default().with_maximized(true),
         ..Default::default()
     };
 
@@ -72,12 +72,32 @@ impl PdfApp {
         if let Ok(doc) = pdfium.load_pdf_from_file(&path, None) {
             app.total_pages = doc.pages().len();
             app.document = Some(doc);
-            app.load_page(&cc.egui_ctx, 0);
+            app.load_page(&cc.egui_ctx, Self::latest_index());
         } else {
             app.text_content = format!("Could not load PDF at path: {}", path);
         }
 
         app
+    }
+
+    fn latest_index() -> u16 {
+        let mut max_index = 0;
+    
+        if let Ok(entries) = fs::read_dir(".") {
+            for entry in entries.flatten() {
+                if let Some(file_name) = entry.file_name().to_str() {
+                    if let Some(captures) = file_name.strip_prefix("page").and_then(|s| s.strip_suffix(".txt")) {
+                        if let Ok(index) = captures.parse::<u16>() {
+                            if index > max_index {
+                                max_index = index - 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    
+        max_index
     }
 
     fn load_page(&mut self, ctx: &egui::Context, index: u16) {
@@ -99,6 +119,13 @@ impl PdfApp {
                 // 3. Extract Text
                 if let Ok(text) = page.text() {
                     self.text_content = text.all();
+                }
+
+                // 4. If the file exists, load its text
+                let file_name = format!("page{:03}.txt", index + 1);
+                if let Ok(content) = std::fs::read_to_string(&file_name) {
+                    eprintln!("Loading file {}", file_name);
+                    self.text_content = content;
                 }
 
                 self.current_page_index = index;
@@ -166,6 +193,16 @@ impl PdfApp {
         }
         rects
     }
+
+    fn save_page(&self) {
+        let filename = format!("page{:03}.txt", self.current_page_index + 1);
+
+        if let Err(e) = fs::write(&filename, &self.text_content) {
+            eprintln!("Error saving file {}: {}", filename, e);
+        } else {
+            println!("Saved text to {}", filename);
+        }
+    }
 }
 
 impl eframe::App for PdfApp {
@@ -187,14 +224,10 @@ impl eframe::App for PdfApp {
                 ui.separator();
 
                 if ui.button("Save").clicked() {
-                    // Format filename: page001.txt, page012.txt, etc.
-                    let filename = format!("page{:03}.txt", self.current_page_index + 1);
-
-                    if let Err(e) = fs::write(&filename, &self.text_content) {
-                        eprintln!("Error saving file {}: {}", filename, e);
-                    } else {
-                        println!("Saved text to {}", filename);
-                    }
+                    self.save_page();
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl) {
+                    self.save_page();
                 }
 
                 if ui.button("Display").clicked() {
