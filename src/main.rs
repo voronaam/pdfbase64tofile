@@ -212,6 +212,45 @@ impl PdfApp {
             println!("Saved text to {}", filename);
         }
     }
+
+    fn jump_to_ilone(&self, ctx: &egui::Context) {
+        let text_id = egui::Id::new("shared_pdf_editor_id");
+                    
+        // 1. Get current cursor position (default to 0 if not set)
+        let current_idx = if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+             state.cursor.char_range().map(|r| r.primary.index).unwrap_or(0)
+        } else {
+            0
+        };
+
+        // 2. Search for next char starting AFTER current cursor
+        // We define the set of characters to look for
+        let targets = ['I', 'l', '1'];
+        
+        // Slice the string from current_idx + 1 to end
+        if current_idx + 1 < self.text_content.len() {
+            let slice = &self.text_content[current_idx + 1..];
+            
+            // Find the offset within the slice
+            if let Some(offset) = slice.find(&targets[..]) {
+                let new_index = current_idx + 1 + offset;
+                
+                // 3. Mutate the TextEdit State
+                if let Some(mut state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+                    // Set cursor to the new index
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                        egui::text::CCursor::new(new_index)
+                    )));
+                    
+                    // Save the state back
+                    state.store(ctx, text_id);
+                    
+                    // 4. Focus the editor so user can type immediately
+                    ctx.memory_mut(|m| m.request_focus(text_id));
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for PdfApp {
@@ -232,11 +271,20 @@ impl eframe::App for PdfApp {
 
                 ui.separator();
 
+                if ui.button("Jump to I/l/1").clicked() {
+                    self.jump_to_ilone(ctx);
+                }
+
+                ui.separator();
+
                 if ui.button("Save").clicked() {
                     self.save_page();
                 }
                 if ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl) {
                     self.save_page();
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::J) && i.modifiers.ctrl) {
+                    self.jump_to_ilone(ctx);
                 }
 
                 if ui.button("Display").clicked() {
