@@ -263,7 +263,7 @@ impl eframe::App for PdfApp {
 
             // --- TOP SECTION: PDF VIEW ---
             egui::ScrollArea::vertical()
-                .max_height(available_height * 0.1)
+                .max_height(80.0)// .max_height(available_height * 0.1)
                 .id_salt("pdf_scroll")
                 .show(ui, |ui| {
                     if let Some(texture) = &self.page_texture {
@@ -319,16 +319,28 @@ impl eframe::App for PdfApp {
                                             h_rect_norm.max.y * display_size.y,
                                         );
 
-                                    let screen_rect =
-                                        egui::Rect::from_min_max(screen_min, screen_max);
+                                    // Rectangle mode
+                                    // let screen_rect =
+                                    //     egui::Rect::from_min_max(screen_min, screen_max);
 
-                                    // FIX #1: Green Stroke instead of Fill
-                                    painter.rect_stroke(
-                                        screen_rect,
-                                        0.0,
-                                        egui::Stroke::new(2.0, egui::Color32::GREEN),
-                                        egui::StrokeKind::Outside,
+                                    // painter.rect_stroke(
+                                    //     screen_rect,
+                                    //     0.0,
+                                    //     egui::Stroke::new(2.0, egui::Color32::GREEN),
+                                    //     egui::StrokeKind::Outside,
+                                    // );
+
+                                    // Underline mode
+                                    let line_y = screen_max.y; // Bottom of the rectangle
+                                    let line_start = egui::pos2(screen_min.x - 2.0, line_y); // Extend slightly to the left
+                                    let line_end = egui::pos2(screen_max.x + 2.0, line_y);   // Extend slightly to the right
+                                
+                                    // Draw a bold green line under the letter
+                                    painter.line_segment(
+                                        [line_start, line_end],
+                                        egui::Stroke::new(4.0, egui::Color32::GREEN), // Bold line
                                     );
+
                                 }
                             }
                         }
@@ -340,11 +352,13 @@ impl eframe::App for PdfApp {
             // --- BOTTOM SECTION: SPLIT EDITOR ---
             egui::ScrollArea::vertical()
                 .id_salt("text_scroll")
+                .max_height(80.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         // SETUP FONTS
+                        let font_size = 24.0;
                         // We define the font here so we can use metrics for both the indicator and the editor
-                        let font_id = egui::FontId::new(16.0, egui::FontFamily::Monospace);
+                        let font_id = egui::FontId::new(font_size, egui::FontFamily::Monospace);
                         let row_height = ui.fonts_mut(|f| f.row_height(&font_id)) * 1.02;
 
                         // 1. LEFT PANEL: STATUS INDICATORS
@@ -391,7 +405,7 @@ impl eframe::App for PdfApp {
                             .id(text_id)
                             .desired_width(f32::INFINITY)
                             .horizontal_align(emath::Align::Center)
-                            .font(egui::FontId::new(16.0, egui::FontFamily::Monospace));
+                            .font(egui::FontId::new(font_size, egui::FontFamily::Monospace));
 
                         ui.add(text_edit);
                     });
