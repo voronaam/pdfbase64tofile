@@ -1,9 +1,9 @@
 use eframe::egui;
+use eframe::emath;
 use pdfium_render::prelude::*;
 use std::env;
 use std::fs;
 use std::process::Command;
-use std::sync::Arc;
 
 fn main() -> Result<(), eframe::Error> {
     // 1. Setup PDFium
@@ -230,7 +230,7 @@ impl eframe::App for PdfApp {
 
             // --- TOP SECTION: PDF VIEW ---
             egui::ScrollArea::vertical()
-                .max_height(available_height * 0.5)
+                .max_height(available_height * 0.1)
                 .id_salt("pdf_scroll")
                 .show(ui, |ui| {
                     if let Some(texture) = &self.page_texture {
@@ -248,7 +248,7 @@ impl eframe::App for PdfApp {
                             egui::Color32::WHITE,
                         );
 
-                        let text_id = ui.make_persistent_id("text_editor");
+                        let text_id = egui::Id::new("shared_pdf_editor_id");
                         if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
                             if let Some(range) = state.cursor.char_range() {
                                 let highlights = self.get_highlights(range);
@@ -304,16 +304,64 @@ impl eframe::App for PdfApp {
 
             ui.separator();
 
-            // --- BOTTOM SECTION: TEXT EDITOR ---
+            // --- BOTTOM SECTION: SPLIT EDITOR ---
             egui::ScrollArea::vertical()
                 .id_salt("text_scroll")
                 .show(ui, |ui| {
-                    let text_edit = egui::TextEdit::multiline(&mut self.text_content)
-                        .id(ui.make_persistent_id("text_editor"))
-                        .desired_width(f32::INFINITY)
-                        .font(egui::FontId::new(16.0, egui::FontFamily::Monospace));
+                    ui.horizontal(|ui| {
+                        // SETUP FONTS
+                        // We define the font here so we can use metrics for both the indicator and the editor
+                        let font_id = egui::FontId::new(16.0, egui::FontFamily::Monospace);
+                        let row_height = ui.fonts_mut(|f| f.row_height(&font_id)) * 1.02;
 
-                    ui.add(text_edit);
+                        // 1. LEFT PANEL: STATUS INDICATORS
+                        // We allocate a vertical strip. Width = 15px.
+                        // Height = total lines * row height.
+                        let total_lines = self.text_content.lines().count().max(1);
+                        let desired_height = total_lines as f32 * row_height;
+
+                        // Allocate space for the indicators
+                        let (rect, _response) = ui.allocate_exact_size(
+                            egui::vec2(15.0, desired_height),
+                            egui::Sense::hover(),
+                        );
+
+                        // Draw the indicators
+                        let painter = ui.painter_at(rect);
+                        for (i, line) in self.text_content.lines().enumerate() {
+                            let char_count = line.trim().chars().count();
+
+                            // Check rule: Exactly 76 characters
+                            let color = if char_count == 76 {
+                                egui::Color32::GREEN
+                            } else {
+                                egui::Color32::from_gray(50) // Dim gray for other lines
+                            };
+
+                            // Calculate position
+                            // Note: TextEdit usually adds a small margin (approx 4.0-8.0px).
+                            // We offset Y slightly to align with the text baseline.
+                            let y_offset = rect.top() + (i as f32 * row_height) + 4.0;
+
+                            painter.rect_filled(
+                                egui::Rect::from_min_size(
+                                    egui::pos2(rect.left(), y_offset),
+                                    egui::vec2(8.0, row_height - 2.0),
+                                ),
+                                2.0, // rounding
+                                color,
+                            );
+                        }
+
+                        let text_id = egui::Id::new("shared_pdf_editor_id");
+                        let text_edit = egui::TextEdit::multiline(&mut self.text_content)
+                            .id(text_id)
+                            .desired_width(f32::INFINITY)
+                            .horizontal_align(emath::Align::Center)
+                            .font(egui::FontId::new(16.0, egui::FontFamily::Monospace));
+
+                        ui.add(text_edit);
+                    });
                 });
         });
     }
