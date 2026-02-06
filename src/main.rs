@@ -416,20 +416,24 @@ impl PdfApp {
         let mut found_page_index = None;
         let mut found_cursor_pos = 0;
 
-        'file_loop: for (page_idx, file) in files.iter().enumerate() {
+        'file_loop: for file in files.iter() {
             if let Ok(content) = fs::read_to_string(file.path()) {
                 // Iterate characters in this file
                 for (char_idx, c) in content.chars().enumerate() {
                     // Check if it's a valid Base64 char (A-Z, a-z, 0-9, +, /)
                     // We treat everything else (newlines, spaces) as invisible to the offset count
                     if c.is_alphanumeric() || c == '+' || c == '/' {
-                        // Check match BEFORE incrementing (0-indexed) or AFTER?
-                        // Usually offset 0 is the first char.
                         if current_b64_count == target_b64_index {
                             // FOUND IT!
-                            found_page_index = Some(page_idx);
-                            found_cursor_pos = char_idx;
-                            break 'file_loop;
+                            let name = file.file_name().to_string_lossy().to_string();
+                            let num_str: String = name.chars().filter(|c| c.is_ascii_digit()).collect();
+
+                            if let Ok(page_num) = num_str.parse::<u16>() {
+                                // PDF pages are 0-indexed, File names are usually 1-indexed
+                                found_page_index = Some(if page_num > 0 { page_num - 1 } else { 0 });
+                                found_cursor_pos = char_idx;
+                                break 'file_loop;
+                            }
                         }
                         current_b64_count += 1;
                     }
