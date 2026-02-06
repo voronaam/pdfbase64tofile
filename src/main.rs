@@ -497,12 +497,19 @@ impl eframe::App for PdfApp {
                     self.save_page();
                     self.run_stream_decoding(ctx);
                 }
+
+                // Keyboard shortcuts
                 if ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl) {
                     self.save_page();
                     self.run_stream_decoding(ctx);
                 }
                 if ctx.input(|i| i.key_pressed(egui::Key::J) && i.modifiers.ctrl) {
                     self.jump_to_ilone(ctx);
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::G) && i.modifiers.ctrl) {
+                    self.show_hex_dialog = true;
+                    self.hex_input.clear();
+                    self.jump_status_msg.clear();
                 }
 
                 if ui.button("Display").clicked() {
