@@ -461,6 +461,32 @@ impl PdfApp {
             self.jump_status_msg = format!("Offset out of bounds. Max Base64 len: {}", current_b64_count);
         }
     }
+
+    fn cycle_common_problem(&mut self, state: egui::text_edit::TextEditState) {
+        if let Some(range) = state.cursor.char_range() {
+            let idx = range.primary.index;
+            let current_char = self.text_content.chars().nth(idx).unwrap_or(' ');
+            let next_char = self.text_content.chars().nth(idx + 1).unwrap_or(' ');
+
+            if let Some(replacement) = match (current_char, next_char) {
+                ('r', 'n') => Some((2, "m")),
+                ('I', 'c') => Some((2, "k")),
+                ('I', 'C') => Some((2, "K")),
+                ('m', _) => Some((1, "rn")),
+                ('I', _) => Some((1, "l")),
+                ('l', _) => Some((1, "1")),
+                ('1', _) => Some((1, "I")),
+                ('O', _) => Some((1, "0")),
+                ('0', _) => Some((1, "O")),
+                ('g', _) => Some((1, "q")),
+                ('q', _) => Some((1, "g")),
+                _ => None
+            } {
+                self.text_content.replace_range(idx..idx+replacement.0, &replacement.1);
+            }
+        }
+    }
+
 }
 
 impl eframe::App for PdfApp {
@@ -675,6 +701,13 @@ impl eframe::App for PdfApp {
                         }
 
                         let text_id = egui::Id::new("shared_pdf_editor_id");
+
+                        if ctx.input(|i| i.key_pressed(egui::Key::Space) && i.modifiers.ctrl) {
+                            if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+                                self.cycle_common_problem(state);
+                            }
+                        }
+
                         let text_edit = egui::TextEdit::multiline(&mut self.text_content)
                             .id(text_id)
                             .desired_width(f32::INFINITY)

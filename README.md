@@ -18,3 +18,10 @@ Feel free to edit `display_script.sh` to ise whatever extra post processing you 
 My script just uses `tr`, `base64` and `display`.
 
 Screenshot: https://imgur.com/screenshot-gTnNrkW
+
+Shortcuts:
+
+Ctrl+S: Save
+Ctrl+J: Jump to next I/l/1
+Ctrl+G: Jump to hex address
+Ctrl+Space: cycle next characters through common OCR mistakes (O/0, g/q, etc)
