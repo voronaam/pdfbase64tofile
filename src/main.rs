@@ -469,9 +469,11 @@ impl PdfApp {
             let next_char = self.text_content.chars().nth(idx + 1).unwrap_or(' ');
 
             if let Some(replacement) = match (current_char, next_char) {
+                ('-', 'F') => Some((2, "+")),
                 ('r', 'n') => Some((2, "m")),
                 ('I', 'c') => Some((2, "k")),
                 ('I', 'C') => Some((2, "K")),
+                ('3', 'C') => Some((2, "X")),
                 ('m', _) => Some((1, "rn")),
                 ('I', _) => Some((1, "l")),
                 ('l', _) => Some((1, "1")),
@@ -487,6 +489,23 @@ impl PdfApp {
         }
     }
 
+    fn display_script() {
+        // Determine script name based on OS
+        #[cfg(target_os = "windows")]
+        let script = "display_script.bat";
+        #[cfg(not(target_os = "windows"))]
+        let script = "./display_script.sh";
+
+        println!("Running script: {}", script);
+
+        // Execute the script
+        let child = if cfg!(target_os = "windows") {
+            Command::new("cmd").args(["/C", script]).spawn()
+        } else {
+            Command::new("sh").arg(script).spawn()
+        };
+        child.expect("Failed to launch display script");
+    }
 }
 
 impl eframe::App for PdfApp {
@@ -537,23 +556,13 @@ impl eframe::App for PdfApp {
                     self.hex_input.clear();
                     self.jump_status_msg.clear();
                 }
+                // Keyboard shortcuts
+                if ctx.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.ctrl) {
+                    Self::display_script();
+                }
 
                 if ui.button("Display").clicked() {
-                    // Determine script name based on OS
-                    #[cfg(target_os = "windows")]
-                    let script = "display_script.bat";
-                    #[cfg(not(target_os = "windows"))]
-                    let script = "./display_script.sh";
-
-                    println!("Running script: {}", script);
-
-                    // Execute the script
-                    let child = if cfg!(target_os = "windows") {
-                        Command::new("cmd").args(["/C", script]).spawn()
-                    } else {
-                        Command::new("sh").arg(script).spawn()
-                    };
-                    child.expect("Failed to launch display script");
+                    Self::display_script();
                 }
             });
 
