@@ -895,7 +895,17 @@ impl eframe::App for PdfApp {
                             .horizontal_align(emath::Align::Center)
                             .font(egui::FontId::new(font_size, egui::FontFamily::Monospace));
 
-                        ui.add(text_edit);
+                        let text_edit_response = text_edit.show(ui);
+                        // This is an attempt to keep cursor visible in the text editor
+                        if text_edit_response.response.has_focus() {
+                            if let Some(cursor_range) = text_edit_response.cursor_range {
+                                let cursor_relative_rect = text_edit_response.galley.pos_from_cursor(cursor_range.primary);
+                                
+                                let cursor_screen_rect = cursor_relative_rect.translate(text_edit_response.galley_pos.to_vec2());
+                                
+                                ui.scroll_to_rect(cursor_screen_rect, None);
+                            }                        
+                        }
                     });
                 });
 
