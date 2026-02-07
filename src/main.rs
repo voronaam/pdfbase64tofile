@@ -274,6 +274,7 @@ impl PdfApp {
         // 1. Load and Sort Files
         self.decode_logs.push("Scanning current directory for page*.txt...".to_owned());
         let mut file_contents = Vec::new();
+        let mut count = 0;
         
         if let Ok(entries) = fs::read_dir(".") {
             let mut files: Vec<_> = entries.flatten()
@@ -292,11 +293,13 @@ impl PdfApp {
 
             for file in files {
                 if let Ok(content) = fs::read_to_string(file.path()) {
-                    self.decode_logs.push(format!("Loaded: {:?}", file.file_name()));
+                    // self.decode_logs.push(format!("Loaded: {:?}", file.file_name()));
                     file_contents.push(content);
+                    count += 1;
                 }
             }
         }
+        self.decode_logs.push(format!("Loaded {} files", count));
 
         let raw_string = file_contents.join("");
         self.decode_logs.push(format!("Total raw length: {} characters", raw_string.len()));
@@ -330,7 +333,6 @@ impl PdfApp {
         }
     }
 
-    // ROBUST SCANNER: Looks for SOI (FF D8) and handles truncated streams
     fn recover_jpegs_from_stream(&mut self, ctx: &egui::Context, bytes: &[u8]) {
         // let mut decoder = jpeg_decoder::Decoder::new(bytes);
         // let metadata = decoder.info().map(|e| self.decode_logs.push(format!("-> Got  image info: {}x{}", e.width, e.height)));
@@ -465,28 +467,58 @@ impl PdfApp {
     fn cycle_common_problem(&mut self, state: egui::text_edit::TextEditState) {
         if let Some(range) = state.cursor.char_range() {
             let idx = range.primary.index;
-            let current_char = self.text_content.chars().nth(idx).unwrap_or(' ');
-            let next_char = self.text_content.chars().nth(idx + 1).unwrap_or(' ');
+            let current_char = self.text_content.chars().nth(idx).unwrap_or('*');
+            let next_char = self.text_content.chars().nth(idx + 1).unwrap_or('*');
+            let third_char = self.text_content.chars().nth(idx + 2).unwrap_or('*');
 
-            if let Some(replacement) = match (current_char, next_char) {
-                ('-', 'F') => Some((2, "+")),
-                ('r', 'n') => Some((2, "m")),
-                ('I', 'c') => Some((2, "k")),
-                ('I', 'C') => Some((2, "K")),
-                ('3', 'C') => Some((2, "X")),
-                ('m', _) => Some((1, "rn")),
-                ('I', _) => Some((1, "l")),
-                ('l', _) => Some((1, "1")),
-                ('1', _) => Some((1, "I")),
-                ('O', _) => Some((1, "0")),
-                ('0', _) => Some((1, "O")),
-                ('g', _) => Some((1, "q")),
-                ('q', _) => Some((1, "g")),
+            if let Some(replacement) = match (current_char, next_char, third_char) {
+                (' ', '1', ' ') => Some((3, "1")),
+                (' ', 'I', ' ') => Some((3, "1")),
+                (' ', 'l', ' ') => Some((3, "1")),
+                ('-', 'F', _) => Some((2, "+")),
+                ('r', 'n', _) => Some((2, "m")),
+                ('I', 'c', _) => Some((2, "k")),
+                ('I', 'C', _) => Some((2, "K")),
+                ('3', 'C', _) => Some((2, "X")),
+                ('I', 'J', _) => Some((2, "U")),
+                ('m', _, _) => Some((1, "rn")),
+                ('I', _, _) => Some((1, "l")),
+                ('l', _, _) => Some((1, "1")),
+                ('1', _, _) => Some((1, "I")),
+                ('O', _, _) => Some((1, "0")),
+                ('0', _, _) => Some((1, "O")),
+                ('g', _, _) => Some((1, "q")),
+                ('q', _, _) => Some((1, "g")),
+                ('c', _, _) => Some((1, "e")),
+                ('e', _, _) => Some((1, "c")),
+                ('Y', _, _) => Some((1, "V")),
+                ('V', _, _) => Some((1, "Y")),
                 _ => None
             } {
                 self.text_content.replace_range(idx..idx+replacement.0, &replacement.1);
             }
         }
+    }
+
+    fn get_current_line_number(&self, ctx: &egui::Context) -> String {
+        let text_id = egui::Id::new("shared_pdf_editor_id");
+        
+        if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+            if let Some(range) = state.cursor.char_range() {
+                // Get the index of the cursor (primary selection point)
+                let char_idx = range.primary.index;
+
+                // Count newlines up to the cursor position
+                // We add 1 because humans count lines starting from 1, not 0
+                let line_count = self.text_content.chars()
+                    .take(char_idx)
+                    .filter(|&c| c == '\n')
+                    .count();
+
+                return format!("{}", line_count + 1);
+            }
+        }
+        "?".to_string()
     }
 
     fn display_script() {
@@ -506,11 +538,151 @@ impl PdfApp {
         };
         child.expect("Failed to launch display script");
     }
+
+    // Warning, this function is LLM-generated. Mostly.
+    // Well, the AI code did not compile and used deprecated APIs. I fixed those. But the logic is from the LLM...
+    fn adjust_line_spaces_to_pdf(&mut self, ctx: &egui::Context) {
+        let text_id: egui::Id = egui::Id::new("shared_pdf_editor_id");
+        
+        if let Some(mut state) = egui::text_edit::TextEditState::load(ctx, text_id) {
+            if let Some(range) = state.cursor.char_range() {
+                let cursor_idx = range.primary.index;
+                let chars: Vec<char> = self.text_content.chars().collect();
+
+                // 1. Identify Key Indices in the Text Editor
+                // Find start of current line (scan back)
+                let mut line_start_idx = cursor_idx;
+                while line_start_idx > 0 && chars[line_start_idx - 1] != '\n' {
+                    line_start_idx -= 1;
+                }
+
+                // Find end of current line (scan forward to \n)
+                let mut newline_idx = None;
+                for i in cursor_idx..chars.len() {
+                    if chars[i] == '\n' {
+                        newline_idx = Some(i);
+                        break;
+                    }
+                }
+
+                if let Some(nl_idx) = newline_idx {
+                    // Find Last Non-Space Char of Current Line (A)
+                    let mut idx_a = nl_idx;
+                    while idx_a > line_start_idx && chars[idx_a - 1].is_whitespace() {
+                        idx_a -= 1;
+                    }
+                    // idx_a points to the first space *after* the text, or the newline if no spaces.
+                    // So idx_a - 1 is the actual character.
+                    if idx_a == line_start_idx { return; } // Empty line, nothing to align against
+                    let last_char_idx = idx_a - 1;
+
+                    // Find First Char of Next Line (B)
+                    // It is the character immediately after the newline (nl_idx + 1)
+                    let next_line_start_idx = nl_idx + 1;
+                    if next_line_start_idx >= chars.len() { return; } // EOF
+
+                    // 2. Consult PDF Logic
+                    if let Some(doc) = &self.document {
+                        if let Ok(page) = doc.pages().get(self.current_page_index) {
+                            if let Ok(text_page) = page.text() {
+                                
+                                // Get the PDF Rect for Item A (Last char of current line)
+                                // We use an iterator to be safe
+                                let chars = text_page.chars();
+                                let obj_a_opt = chars.iter().nth(last_char_idx);
+                                
+                                if let Some(obj_a) = obj_a_opt {
+                                    if let Ok(rect_a) = obj_a.loose_bounds() {
+                                        
+                                        // 3. Scan PDF for the "True" Start of Next Line
+                                        // We look for the first character *after* A that satisfies the visual requirements:
+                                        // - Below A
+                                        // - Leftmost (reset X)
+                                        let mut found_pdf_target_idx = None;
+                                        
+                                        // Scan forward in PDF from A
+                                        for (offset, char_obj) in text_page.chars().iter().skip(last_char_idx + 1).enumerate() {
+                                            if let Ok(rect_curr) = char_obj.loose_bounds() {
+                                                let is_below = rect_curr.top().value < (rect_a.bottom().value + 2.0); // Tolerance
+                                                let is_leftmost = rect_curr.left().value < rect_a.left().value;
+                                                
+                                                if is_below && is_leftmost {
+                                                    // Found it! 
+                                                    // The index in PDF is last_char_idx + 1 + offset
+                                                    found_pdf_target_idx = Some(last_char_idx + 1 + offset);
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        // 4. Calculate Adjustment
+                                        if let Some(target_idx) = found_pdf_target_idx {
+                                            // The text editor currently thinks the next line starts at `next_line_start_idx`.
+                                            // The PDF says the next visual line starts at `target_idx`.
+                                            // The difference must be absorbed by spaces at the end of the current line.
+                                            
+                                            let current_diff = (next_line_start_idx as i32) - (last_char_idx as i32);
+                                            let target_diff = (target_idx as i32) - (last_char_idx as i32);
+                                            
+                                            // How many spaces do we need to add/remove?
+                                            // current_diff includes the spaces + the newline (1)
+                                            // target_diff includes the spaces + the newline (1) (logically)
+                                            let needed_change = target_diff - current_diff;
+
+                                            let mut final_newline_idx = nl_idx;
+
+                                            if needed_change > 0 {
+                                                // We are short on indices. Add spaces.
+                                                let spaces = " ".repeat(needed_change as usize);
+                                                // Insert before newline
+                                                let byte_offset = self.text_content.char_indices().nth(nl_idx).unwrap().0;
+                                                self.text_content.insert_str(byte_offset, &spaces);
+                                                final_newline_idx = nl_idx + needed_change as usize;
+                                                println!("Adjusted: Added {} spaces.", needed_change);
+                                            } else if needed_change < 0 {
+                                                // We have too many indices (too many spaces). Remove them.
+                                                let remove_count = (-needed_change) as usize;
+                                                
+                                                // Ensure we only remove spaces, don't eat text.
+                                                // Available spaces = nl_idx - idx_a
+                                                let available_spaces = nl_idx - idx_a;
+                                                
+                                                let safe_remove = remove_count.min(available_spaces);
+                                                
+                                                if safe_remove > 0 {
+                                                    let start_remove_idx = nl_idx - safe_remove;
+                                                    let byte_start = self.text_content.char_indices().nth(start_remove_idx).unwrap().0;
+                                                    let byte_end = self.text_content.char_indices().nth(nl_idx).unwrap().0;
+                                                    
+                                                    self.text_content.replace_range(byte_start..byte_end, "");
+                                                    final_newline_idx = nl_idx - safe_remove;
+                                                    println!("Adjusted: Removed {} spaces.", safe_remove);
+                                                }
+                                            }
+
+                                            let new_cursor_pos = final_newline_idx + 1;
+                                            
+                                            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                                                egui::text::CCursor::new(new_cursor_pos)
+                                            )));
+                                            
+                                            state.store(ctx, text_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for PdfApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            let text_id = egui::Id::new("shared_pdf_editor_id");
             ui.horizontal(|ui| {
                 if ui.button("Prev").clicked() && self.current_page_index > 0 {
                     self.load_page(ctx, self.current_page_index - 1);
@@ -586,7 +758,6 @@ impl eframe::App for PdfApp {
                             egui::Color32::WHITE,
                         );
 
-                        let text_id = egui::Id::new("shared_pdf_editor_id");
                         if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
                             if let Some(range) = state.cursor.char_range() {
                                 let highlights = self.get_highlights(range);
@@ -709,12 +880,13 @@ impl eframe::App for PdfApp {
                             );
                         }
 
-                        let text_id = egui::Id::new("shared_pdf_editor_id");
-
                         if ctx.input(|i| i.key_pressed(egui::Key::Space) && i.modifiers.ctrl) {
                             if let Some(state) = egui::text_edit::TextEditState::load(ctx, text_id) {
                                 self.cycle_common_problem(state);
                             }
+                        }
+                        if ctx.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl) {
+                            self.adjust_line_spaces_to_pdf(ctx);
                         }
 
                         let text_edit = egui::TextEdit::multiline(&mut self.text_content)
@@ -726,6 +898,12 @@ impl eframe::App for PdfApp {
                         ui.add(text_edit);
                     });
                 });
+
+                ui.label(format!(
+                    "Line {} / {}",
+                    self.get_current_line_number(&ctx),
+                    self.text_content.lines().count()
+                ));
 
                 // let available_height = ui.available_height();
 
