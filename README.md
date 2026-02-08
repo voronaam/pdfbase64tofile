@@ -31,11 +31,11 @@ My script just uses `tr`, `base64` and `display`.
 
 Screenshot: https://imgur.com/screenshot-gTnNrkW
 
-Shortcuts:
+### Shortcuts
 
-Ctrl+S: Save
-Ctrl+J: Jump to next I/l/1
-Ctrl+G: Jump to hex address
-Ctrl+D: Display image after the processing pipeline
-Ctrl+Space: cycle next characters through common OCR mistakes (O/0, g/q, etc)
-Ctrl+Enter: "Finalize" the current line. Adjust the number of spaces at the end of the line to align with the PDF (AI-generated logic)
+- **Ctrl+S**: Save
+- **Ctrl+J**: Jump to next I/l/1
+- **Ctrl+G**: Jump to hex address
+- **Ctrl+D**: Display image after the processing pipeline
+- **Ctrl+Space**: Cycle next characters through common OCR mistakes (e.g., O/0, g/q, etc.)
+- **Ctrl+Enter**: "Finalize" the current line. Adjust the number of spaces at the end of the line to align with the PDF (AI-generated logic)
