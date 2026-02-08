@@ -2,7 +2,7 @@ This is a simple utility to fix the OCR text found in a PDF file.
 
 This project started as a helper utility to recover this file published by DOJ: https://www.justice.gov/epstein/files/DataSet%209/EFTA01012650.pdf
 
-The file you found contains two photos, taken with iPhone X 4 seconds apart (2018:12:18 18:54:31.409 and the other one 4 seconds later at 18:54:35).
+The PDF file contains two photos, taken with iPhone X 4 seconds apart (2018:12:18 18:54:31.409 and the other one 4 seconds later at 18:54:35).
 
 I was able to fix 18 pages worth of the first image. There is still minor corruption remains, but the images comes along a photo of some cloth hangers with pieces of clothing hanging on them.
 
