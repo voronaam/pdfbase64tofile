@@ -1,5 +1,17 @@
 This is a simple utility to fix the OCR text found in a PDF file.
 
+This project started as a helper utility to recover this file published by DOJ: https://www.justice.gov/epstein/files/DataSet%209/EFTA01012650.pdf
+
+The file you found contains two photos, taken with iPhone X 4 seconds apart (2018:12:18 18:54:31.409 and the other one 4 seconds later at 18:54:35).
+
+I was able to fix 18 pages worth of the first image. There is still minor corruption remains, but the images comes along a photo of some cloth hangers with pieces of clothing hanging on them.
+
+I think it is unlikely to be an important photo. It is probably photos of two items of clothing someone considering buying or wearing and sent to somebody for the advice.
+
+Here is the  result: ![decoded_resaved](./IMG_7523/decoded_resaved.jpg) (decoded with the utility and resaved to avoid being flagged for corrpted JPEG)
+
+## About the utility
+
 The expectation is that PDF file contains image and text, text in
 the PDF is base64 encoded image formatted to have 76 characters per line.
 
